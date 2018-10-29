@@ -4,6 +4,9 @@ from matchzoo import engine
 
 from keras import Model
 from keras.layers import Input, Conv1D, GlobalMaxPool1D, Dot, Dense
+from keras import backend as K
+from keras.utils import to_categorical
+from keras.layers.core import Lambda
 
 
 class CDSSMModel(engine.BaseModel):
@@ -28,8 +31,12 @@ class CDSSMModel(engine.BaseModel):
         params = super().get_default_params()
         params['optimizer'] = 'adam'
         # TODO GET TRI-LETTER DIMENSIONALITY FROM FIT-TRANSFORM AS INPUT SHAPE
-        # Dimension: (TEXT_LENGTH, DIM_WORD_N_GRAM)
+        # Dimension: (TEXT_LENGTH, DIM_WORD_N_GRAM )
         params['input_shapes'] = [(10, 900), (10, 900)]
+        #params['dim_triletter'] = 900
+        #params['dim_text'] = 20
+        params.add(engine.Param('dim_triletter', 900))
+        params.add(engine.Param('dim_text', 20))
         params.add(engine.Param('w_initializer', 'glorot_normal'))
         params.add(engine.Param('b_initializer', 'zeros'))
         params.add(engine.Param('dim_fan_out', 128))
@@ -40,6 +47,7 @@ class CDSSMModel(engine.BaseModel):
         params.add(engine.Param('activation_hidden', 'tanh'))
         params.add(engine.Param('num_hidden_layers', 1))
         return params
+
 
     def _create_base_network(self, input_shape: tuple) -> Model:
         """
@@ -81,12 +89,25 @@ class CDSSMModel(engine.BaseModel):
 
         CDSSM use Siamese arthitecture.
         """
+
+        def convert_to_letter(inputs, dim_triletter):
+            #tri_letter = inputs
+            tri_letter = to_categorical(inputs, num_classes=dim_triletter)
+            tri_letter = K.sum(tri_letter, axis=-2)
+            return tri_letter
+
         input_shape = self._params['input_shapes'][0]
+        print(input_shape)
         base_network = self._create_base_network(
             input_shape=input_shape)
         # Left input and right input.
-        input_left = Input(name='text_left', shape=input_shape)
+        input_left = Input(name='text_left', shape=input_shape, )
         input_right = Input(name='text_right', shape=input_shape)
+        # convert word tri-letter id to word tri-letter 
+        #input_left = Lambda(convert_to_letter, arguments={'dim_triletter': self._params['dim_triletter']})(input_left)
+        #input_right = Lambda(convert_to_letter, arguments={'dim_triletter': self._params['dim_triletter']})(input_right)
+        input_left = Lambda(lambda x: convert_to_letter(x, self._params['dim_triletter']))(input_left)
+        input_right = Lambda(lambda x: convert_to_letter(x, self._params['dim_triletter']))(input_right)
         # Process left & right input.
         x = [base_network(input_left),
              base_network(input_right)]
